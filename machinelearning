@@ -1,1 +1,400 @@
+# Alex Bergvall
+# BME 374L
+import cv2
+import glob
+import numpy as np
+from matplotlib import pyplot as plt
+import sklearn.metrics as metrics
+import tensorflow as tf
+from PIL import Image
 
+path = "C:/users/alex/pycharmprojects/untitled/cancer/*.jpg"
+cancer_array = []
+cancer_th_array = []
+cancerCtr = []
+cancerCtrVals = []
+cancerColor = []
+cancerSavedCtr = []
+cancerAreas = []
+avgAreaPerSample = []
+
+normalpath = "C:/users/alex/pycharmprojects/untitled/normal/*.jpg"
+normColor = []
+normal_array = []
+norm_bi_array = []
+normCtr = []
+normCtrVals = []
+normSavedCtr = []
+normAreas = []
+normAreaPerSample = []
+class Centroid:
+    x = 0
+    y = 0
+
+def integrate(x, y):
+    sm = 0
+    for i in range(1, len(x)):
+        if y[i] != y[i-1]:
+            h = x[i] - x[i - 1]
+            sm += h * (y[i - 1] + y[i]) / 2
+
+    return sm
+#######################################################################################
+# adding cancerous tissue image array
+for filename in glob.glob(path):  # for every file in this directory, do x
+    im = cv2.imread(filename, 0)  # reading and temporarily storing image
+    im2 = cv2.imread(filename, -1)
+    cancer_array.append(im)  # adding image to array
+    # adaptive thresholding
+    th = cv2.adaptiveThreshold(im, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 13)
+    # finding the contours in thresholded image
+    contours, hierarchy = cv2.findContours(th, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    # removing smaller contours (cleaning up)
+    totalArea = 0
+    for i in contours:
+        if 30 < cv2.contourArea(i) < 5000:
+            cancerSavedCtr.append(i)
+            totalArea += cv2.contourArea(i)
+    im1 = cv2.drawContours(im2, cancerSavedCtr, -1, (255, 255, 0), 1)
+    # saving images to array
+    cancer_th_array.append(th)
+    cancerCtr.append(im1)
+    cancerColor.append(im2)
+    cancerCtrVals.append(len(cancerSavedCtr))
+    cancerAreas.append(totalArea)
+    cancerSavedCtr.clear()
+
+
+# adding normal tissue image array
+for filename in glob.glob(normalpath):  # for every file in this directory, do x
+    im = cv2.imread(filename, 0)  # reading and temporarily storing image
+    im2 = cv2.imread(filename, -1)  #
+    normal_array.append(im)  # adding  unaltered image to array
+    # gaussian threshold
+    th = cv2.adaptiveThreshold(im, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 13)
+    # finding the contours in thresholded image
+    contours, hierarchy = cv2.findContours(th, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    totalArea = 0
+
+    for i in contours:
+        if 30 < cv2.contourArea(i) < 5000:
+            normSavedCtr.append(i)
+            totalArea += cv2.contourArea(i) # Saving contour areas
+
+
+    im1 = cv2.drawContours(im2, normSavedCtr, -1, (255, 255, 0), 1)
+    # saving values
+    norm_bi_array.append(th)
+    normCtr.append(im1)
+    normCtrVals.append(len(normSavedCtr))
+    normColor.append(im2)
+    normAreas.append(totalArea)
+    normSavedCtr.clear()
+# displaying images after sectioning
+###########################################################################################
+# Showing data for normal samples
+i = 0
+for image in normal_array:
+    cv2.imshow('NORMAL IMAGE', image)
+    cv2.imshow('NORMAL COLOR IMAGE', normColor[i])
+    cv2.imshow('NORMAL binary IMAGE', norm_bi_array[i])
+    cv2.waitKey(1)
+
+    i += 1
+print('Mean Number of Nuclei in Normal Samples: ' + str(np.average(normCtrVals)))
+print('Variance of Number of Nuclei in Normal Samples: ' + str(np.var(normCtrVals)))
+print('Mean Size of Nuclei in Normal Samples: ' + str(np.average(normAreas)/np.average(normCtrVals)))
+
+for i in range(len(normAreas)):
+    avgAreaPerSample.append(normAreas[i]/normCtrVals[i])
+print('Variance of Size of Nuclei in Normal Samples: ' + str(np.var(avgAreaPerSample)))
+
+# Showing data for cancer samples
+i = 0
+for image in cancer_array:
+    cv2.imshow('cancer IMAGE', image)
+    cv2.imshow('cancer binary IMAGE', cancer_th_array[i])
+    cv2.imshow('Cancer Color Image', cancerColor[i])
+    cv2.waitKey(1)
+    i += 1
+print('Mean Number of Nuclei in Cancer Samples: ' + str(np.average(cancerCtrVals)))
+print('Variance of Number of Nuclei in Cancer Samples: ' + str(np.var(cancerCtrVals)))
+print('Mean Size of Nuclei in Cancer Samples: ' + str(np.average(cancerAreas)/np.average(cancerCtrVals)))
+for i in range(len(cancerAreas)):
+    avgAreaPerSample.append(cancerAreas[i]/cancerCtrVals[i])
+
+print('Variance of Size of Nuclei in Cancer Samples: ' + str(np.var(avgAreaPerSample)))
+#################################################################################################
+# NOW FOR THE BIG TEST
+totalArray = []
+totalTruth = []
+totalColor = []
+
+totalSavedCtr = []
+totalCtrVals = []
+totalAreas = []
+distances = []
+rocxPoints = []
+rocyPoints = []
+centroidPoints = []
+momentsArray = []
+truePosCount = 0
+falsePosCount = 0
+trueNegCount = 0
+falseNegCount = 0
+varianceCalc = []
+variancePerSample = []
+posAmount = len(cancer_array)
+
+# Creating array for all images
+##############################################################################
+for i in cancer_array:
+    totalArray.append(i)
+    totalTruth.append('True')
+
+for i in normal_array:
+    totalArray.append(i)
+    totalTruth.append('False')
+for i in cancerColor:
+    totalColor.append(i)
+for i in normColor:
+    totalColor.append(i)
+# Creating contours for all images
+for image in totalArray:
+    th = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 13)
+    # finding the contours in thresholded image
+    contours, hierarchy = cv2.findContours(th, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+    totalArea = 0
+    maxX, maxY = image.shape
+    for i in contours:
+        if 30 < cv2.contourArea(i) < 5000:
+            totalSavedCtr.append(i)
+            totalArea += cv2.contourArea(i)
+            varianceCalc.append(cv2.contourArea(i))
+    variancePerSample.append(np.var(varianceCalc))
+    # saving moments for directionality
+    momentsArray.append(cv2.moments(th))
+    im1 = cv2.drawContours(image, totalSavedCtr, -1, (255, 255, 0), 1)
+
+    totalCtrVals.append(len(totalSavedCtr))
+    totalAreas.append(totalArea)
+    totalSavedCtr.clear()
+
+# Total nucleus/cytoplasm ratio test starts here
+##############################################################################
+# Getting min and max of each area for thresholds
+minArea = variancePerSample[1]
+for i in variancePerSample:
+    if i < minArea:
+        minArea = i
+
+maxArea = variancePerSample[1]
+for i in variancePerSample:
+    if i > maxArea:
+        maxArea = i
+
+# Looping through thresholds for ROC curve
+varThreshold = range(int(minArea),  int(maxArea), 1000)
+for x in varThreshold:
+    num = 0
+    for i in variancePerSample:
+
+        if i > x:
+
+            if totalTruth[num] == 'True':
+                truePosCount += 1
+            else:
+                falsePosCount += 1
+        else:
+
+            if totalTruth[num] == 'False':
+                trueNegCount += 1
+            else:
+                falseNegCount += 1
+        num += 1
+
+    rocxPoints.append((1 - (trueNegCount/(trueNegCount+falsePosCount))))
+    rocyPoints.append(truePosCount/(truePosCount+falseNegCount))
+    print(truePosCount, falsePosCount, trueNegCount, falseNegCount)
+    print(x)
+    truePosCount = 0
+    falsePosCount = 0
+    trueNegCount = 0
+    falseNegCount = 0
+
+plt.plot(rocxPoints, rocyPoints)
+rocxPoints.append(1)
+rocyPoints.append(1)
+plt.ylim(0, 1)
+plt.xlim(0, 1)
+x = [0, 1]
+y = [0, 1]
+plt.plot(x, y)
+plt.title('Variance of Nuclei Size Feature ROC')
+plt.xlabel('1 - Specificity')
+plt.ylabel('Sensitivity')
+plt.show()
+rocx = np.sort(rocxPoints)
+rocy = np.sort(rocyPoints)
+rocArea = metrics.auc(rocx, rocy)
+print('Area under the Curve:')
+print(rocArea)
+rocxPoints.clear()
+rocyPoints.clear()
+
+# Nuclei density test starts here
+###########################################################################
+#looping through thresholds for ROC curve
+densityThreshold = range(30, 260, 10)
+
+for x in densityThreshold:
+    num = 0
+    for i in totalCtrVals:
+
+        if totalCtrVals[num] > x:
+
+            if totalTruth[num] == 'True':
+                truePosCount += 1
+            else:
+                falsePosCount += 1
+        else:
+
+            if totalTruth[num] == 'False':
+                trueNegCount += 1
+            else:
+                falseNegCount += 1
+        num += 1
+
+    rocxPoints.append((1 - (trueNegCount / (trueNegCount + falsePosCount))))
+    rocyPoints.append(truePosCount / (truePosCount + falseNegCount))
+    print(truePosCount, falsePosCount, trueNegCount, falseNegCount)
+    print(x)
+    truePosCount = 0
+    falsePosCount = 0
+    trueNegCount = 0
+    falseNegCount = 0
+rocxPoints.append(1)
+rocyPoints.append(1)
+plt.plot(rocxPoints, rocyPoints)
+plt.title('Nuclei Density Feature ROC')
+plt.xlabel('1 - Specificity')
+plt.ylabel('Sensitivity')
+plt.ylim(0, 1)
+plt.xlim(0, 1)
+x = [0, 1]
+y = [0, 1]
+plt.plot(x, y)
+plt.show()
+rocx = np.sort(rocxPoints)
+rocy = np.sort(rocyPoints)
+rocArea = metrics.auc(rocx, rocy)
+
+print('Area under the Curve:')
+print(rocArea)
+rocxPoints.clear()
+rocyPoints.clear()
+
+
+##########################################################################
+dirX = 0
+dirY = 0
+
+center = maxX/2, maxY/2
+direction = []
+i = 0
+for moment in momentsArray:
+    dirX = int(moment['m10'] / moment['m00'])
+    dirY = int(moment['m01'] / moment['m00'])
+    pnt = (dirX, dirY)
+    centroidPoints.append(pnt)
+    dist = np.sqrt(np.square(pnt[0] - center[1]) + np.square(pnt[1]-center[0]))
+    distances.append(dist)
+red = [0, 0, 255]
+i = 0
+print(totalArray[0].shape)
+ex, why, zee = totalColor[0].shape
+for image in totalColor:
+    image = cv2.circle(image, (centroidPoints[i][0], centroidPoints[i][1]), 3, [0, 0, 255], -1)
+    image = cv2.line(image, (267, 202), (centroidPoints[i][0], centroidPoints[i][1]), [0, 0, 255], 1)
+    cv2.imshow('Directionality of Nuclei density', image)
+    cv2.waitKey(1)
+    i += 1
+
+truePosCount = 0
+falsePosCount = 0
+trueNegCount = 0
+falseNegCount = 0
+maxtrue = 0
+maxfalse = 0
+maxDist = max(distances)
+minDist = min(distances)
+distanceThreshold = range(int(minDist), int(maxDist), 10)
+for x in distanceThreshold:
+    num = 0
+    for i in distances:
+
+        if i < x:
+            if totalTruth[num] == 'True':
+                truePosCount += 1
+            else:
+                falsePosCount += 1
+        else:
+
+            if totalTruth[num] == 'False':
+                trueNegCount += 1
+            else:
+                falseNegCount += 1
+        num += 1
+
+    rocxPoints.append((1 - (trueNegCount / (trueNegCount + falsePosCount))))
+    rocyPoints.append(truePosCount / (truePosCount + falseNegCount))
+    print(truePosCount, falsePosCount, trueNegCount, falseNegCount)
+    print(x)
+    truePosCount= 0
+    falsePosCount = 0
+    trueNegCount = 0
+    falseNegCount = 0
+rocxPoints.append(1)
+rocyPoints.append(1)
+plt.plot(rocxPoints, rocyPoints)
+plt.title('Directionality of Nuclei Density Feature ROC')
+plt.xlabel('1 - Specificity')
+plt.ylabel('Sensitivity')
+rocx = np.sort(rocxPoints)
+rocy = np.sort(rocyPoints)
+
+rocArea = metrics.auc(rocx, rocy)
+print('Area under the Curve:')
+print(rocArea)
+plt.ylim(0, 1)
+plt.xlim(0, 1)
+x = [0, 1]
+y = [0, 1]
+plt.plot(x, y)
+plt.show()
+
+# Covariance matrix
+covar = [np.array(distances), np.array(variancePerSample), np.array(totalCtrVals)]
+yeet = np.corrcoef(covar)
+print('Covariance Matrix: Column 1: Directionality Vector, Column 2: Nuclei Size Variance Per Sample, Column 3: Nuclei Density by Number, Rows are same order.' )
+print(yeet)
+distThresh = 43
+densThresh = 90
+varThresh = 97519
+for i in range(0, 33, 1):
+    if distances[i] < distThresh or totalCtrVals[i] > densThresh or variancePerSample[i] > varThresh:
+        if totalTruth[i] == 'True':
+            truePosCount += 1
+        else:
+            falsePosCount += 1
+    else:
+        if totalTruth[i] == 'False':
+            trueNegCount += 1
+        else:
+            falseNegCount += 1
+
+
+
+
+
+print(truePosCount, falsePosCount, trueNegCount, falseNegCount)
